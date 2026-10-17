@@ -25,9 +25,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # Vite outputs to dist/, but the CNAME file lives at the repo root
-      # rather than in public/, so copy it over for the custom domain.
-      - run: cp CNAME dist/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -1,0 +1,110 @@
+// Saves every AoPS wiki page listed in public/data/allpages.json, the
+// wiki-hosted images they use, and the category lists the app needs into
+// public/data/, so the GitHub Pages build works without live AoPS access
+// (AoPS blocks cross-origin requests; see aops-chrome.js).
+// Resumable: pages and images already on disk are skipped, so rerun it to
+// retry failures or pick up new pages. Usage: npm run snapshot
+import fs from "node:fs";
+import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import { aopsApiText, aopsImage } from "../aops-chrome.js";
+import { SUBJECTS } from "../src/lib/constants.js";
+import { normalizeTitle, wikiPath } from "../src/lib/wikiKey.js";
+
+const DATA = path.resolve(import.meta.dirname, "../public/data");
+const WIKI = path.join(DATA, "wiki");
+const IMAGES = path.join(DATA, "images");
+const WIKI_IMAGE =
+  /(?:https?:)?\/\/artofproblemsolving\.com\/wiki\/images\/([^"'\s)?#]+)/g;
+
+const api = async (query) => JSON.parse(await aopsApiText(query));
+const pageFile = (title) => path.join(WIKI, wikiPath(title));
+const write = (file, data) => {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, data);
+};
+
+// AoPS rate-limits (429 + challenge page) at 6 parallel requests, so go one
+// at a time with a pause. ~19k pages takes several hours; it's resumable.
+async function pool(label, items, fn, concurrency = 1) {
+  let next = 0;
+  let done = 0;
+  await Promise.all(
+    Array.from({ length: concurrency }, async () => {
+      while (next < items.length) {
+        await fn(items[next++]);
+        await sleep(1000);
+        if (++done % 250 === 0) console.log(`${label}: ${done}/${items.length}`);
+      }
+    }),
+  );
+}
+
+console.log("Categories...");
+const categories = {};
+for (const cat of [...SUBJECTS.map((s) => s.value), "Theorems"]) {
+  categories[cat] = [];
+  let cont = "";
+  do {
+    const json = await api(
+      `action=query&list=categorymembers&cmtitle=Category:${encodeURIComponent(cat)}` +
+        `&cmlimit=max&format=json${cont}`,
+    );
+    categories[cat].push(...json.query.categorymembers.map((m) => m.title));
+    cont = json.continue
+      ? `&cmcontinue=${encodeURIComponent(json.continue.cmcontinue)}`
+      : "";
+  } while (cont);
+}
+write(path.join(DATA, "categories.json"), JSON.stringify(categories));
+
+const titles = JSON.parse(fs.readFileSync(path.join(DATA, "allpages.json")));
+// Problems and answer keys first, so a partial run is already useful.
+const key = (t) => (/Problems\/Problem|Answer Key$/.test(t) ? 0 : 1);
+const todo = titles
+  .filter((t) => !fs.existsSync(pageFile(t)))
+  .sort((a, b) => key(a) - key(b));
+console.log(`Pages: ${todo.length} of ${titles.length} to fetch`);
+const failed = [];
+await pool("Pages", todo, async (title) => {
+  try {
+    const json = await api(
+      `action=parse&prop=text&redirects=1&format=json&page=${encodeURIComponent(title)}`,
+    );
+    if (!json.parse) return; // deleted since the page list was made
+    const page = JSON.stringify({ title: json.parse.title, text: json.parse.text["*"] });
+    if (normalizeTitle(json.parse.title) === normalizeTitle(title)) {
+      write(pageFile(title), page);
+    } else {
+      write(pageFile(json.parse.title), page);
+      write(pageFile(title), JSON.stringify({ title, redirect: json.parse.title }));
+    }
+  } catch (e) {
+    failed.push(title);
+    console.warn(`${title}: ${e.message}`);
+  }
+});
+
+const images = new Set();
+for (const dir of fs.readdirSync(WIKI)) {
+  for (const file of fs.readdirSync(path.join(WIKI, dir))) {
+    const text = fs.readFileSync(path.join(WIKI, dir, file), "utf8");
+    for (const [, img] of text.matchAll(WIKI_IMAGE)) images.add(img);
+  }
+}
+// GitHub Pages decodes %xx in request paths, so save under the decoded name.
+const imageFile = (img) => path.join(IMAGES, decodeURIComponent(img));
+const imageTodo = [...images].filter((img) => !fs.existsSync(imageFile(img)));
+console.log(`Images: ${imageTodo.length} of ${images.size} to fetch`);
+await pool("Images", imageTodo, async (img) => {
+  try {
+    const res = await aopsImage(img);
+    if (res.status === 200) write(imageFile(img), Buffer.from(res.body, "base64"));
+    else console.warn(`${img}: HTTP ${res.status}`);
+  } catch (e) {
+    failed.push(img);
+    console.warn(`${img}: ${e.message}`);
+  }
+});
+
+console.log(failed.length ? `Done, ${failed.length} failed; rerun to retry.` : "Done.");

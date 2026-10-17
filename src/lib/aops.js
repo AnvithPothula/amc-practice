@@ -1,10 +1,11 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
-import { AOPS_API, DEFAULT_TESTS } from "./constants.js";
+import { DEFAULT_TESTS } from "./constants.js";
 import { latexer } from "./latex.js";
 import { rewriteWikiLinks } from "./links.js";
 import { getProblem, getSolutions } from "./parse.js";
+import { normalizeTitle, wikiPath } from "./wikiKey.js";
 import {
   computeDifficulty,
   computeNumber,
@@ -14,13 +15,15 @@ import {
   validProblem,
 } from "./problems.js";
 
+const BASE = import.meta.env.BASE_URL;
+
 let problemsCache = null;
 let problemsPromise = null;
 
 export async function fetchAllProblems() {
   if (problemsCache) return problemsCache;
   if (!problemsPromise) {
-    problemsPromise = fetch("/data/allproblems.json").then((r) => r.json());
+    problemsPromise = fetch(`${BASE}data/allproblems.json`).then((r) => r.json());
   }
   problemsCache = await problemsPromise;
   return problemsCache;
@@ -32,7 +35,7 @@ let pagesPromise = null;
 export async function fetchAllPages() {
   if (pagesCache) return pagesCache;
   if (!pagesPromise) {
-    pagesPromise = fetch("/data/allpages.json").then((r) => r.json());
+    pagesPromise = fetch(`${BASE}data/allpages.json`).then((r) => r.json());
   }
   pagesCache = await pagesPromise;
   return pagesCache;
@@ -79,6 +82,58 @@ export async function collectMatchingProblems({
   return [...out];
 }
 
+const IMAGE_BASE = import.meta.env.DEV ? "/aops-images/" : `${BASE}data/images/`;
+const WIKI_IMAGES = /(?:https?:)?\/\/artofproblemsolving\.com\/wiki\/images\//g;
+
+// Every AoPS API call goes through here. AoPS blocks cross-origin calls, so
+// dev talks to the live wiki through the Chrome-backed proxy (aops-chrome.js)
+// and production builds read the static snapshot from scripts/snapshot.js.
+// Wiki-hosted images get the same treatment. Resolves to null instead of
+// rejecting so an unreachable page shows "not found", not a crash.
+export function aopsApi(params) {
+  const req = import.meta.env.DEV
+    ? fetch(`/aops-api?${params}`).then((r) => r.json())
+    : snapshotApi(new URLSearchParams(params));
+  return req
+    .then((json) => {
+      const text = json?.parse?.text;
+      if (text) text["*"] = text["*"].replace(WIKI_IMAGES, IMAGE_BASE);
+      return json;
+    })
+    .catch(() => null);
+}
+
+const readSnapshot = (file) =>
+  fetch(`${BASE}data/${file}`).then((r) => (r.ok ? r.json() : null));
+let categoriesPromise = null;
+
+// Answers the few api.php queries the app makes from snapshot files.
+async function snapshotApi(p) {
+  if (p.get("action") === "parse") {
+    let page = await readSnapshot(`wiki/${wikiPath(p.get("page"))}`);
+    if (page?.redirect) {
+      page = await readSnapshot(`wiki/${wikiPath(page.redirect)}`);
+    }
+    if (!page) return { error: "missing" };
+    return { parse: { title: page.title, text: { "*": page.text } } };
+  }
+  if (p.get("list") === "categorymembers") {
+    categoriesPromise ??= readSnapshot("categories.json");
+    const category = p.get("cmtitle").replace(/^Category:/, "");
+    const titles = (await categoriesPromise)?.[category] ?? [];
+    return { query: { categorymembers: titles.map((title) => ({ title })) } };
+  }
+  if (p.get("list") === "search") {
+    // No full-text index offline: match every search word against titles.
+    const words = normalizeTitle(p.get("srsearch")).toLowerCase().split(" ");
+    const hits = (await fetchAllPages()).filter((t) =>
+      words.every((w) => t.toLowerCase().includes(w)),
+    );
+    return { query: { search: hits.map((title) => ({ title, snippet: "" })) } };
+  }
+  return null;
+}
+
 export async function fetchCategoryPages(subject) {
   if (categoryCache.has(subject)) return categoryCache.get(subject);
   const titles = [];
@@ -88,8 +143,7 @@ export async function fetchCategoryPages(subject) {
       `action=query&list=categorymembers&cmtitle=Category:${encodeURIComponent(subject)}` +
       `&cmlimit=max&format=json&origin=*` +
       (cmcontinue ? `&cmcontinue=${encodeURIComponent(cmcontinue)}` : "");
-    const res = await fetch(`${AOPS_API}?${params}`);
-    const json = await res.json();
+    const json = await aopsApi(params);
     for (const m of json?.query?.categorymembers ?? []) titles.push(m.title);
     if (!json?.continue) break;
     cmcontinue = json.continue.cmcontinue;
@@ -104,8 +158,7 @@ export async function fetchCategoryPages(subject) {
 // HTML scraping of the redirect notice.
 async function fetchParsed(page) {
   const params = `action=parse&page=${page}&redirects=1&format=json&origin=*`;
-  const response = await fetch(`${AOPS_API}?${params}`);
-  return response.json();
+  return aopsApi(params);
 }
 
 // Fetches a problem page from the AoPS wiki. `redirects=1` on the

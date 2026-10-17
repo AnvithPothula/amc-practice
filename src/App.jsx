@@ -16,7 +16,7 @@ import About from "./components/About.jsx";
 const Stats = lazy(() => import("./components/Stats.jsx"));
 
 function readViewFromUrl() {
-  if (/^\/about\/?$/.test(window.location.pathname)) return "about";
+  if (window.location.pathname.replace(/\/$/, "").endsWith("/about")) return "about";
   const params = new URLSearchParams(window.location.search);
   if (params.get("page")) return "article";
   if (params.get("problems")) return "batch";
@@ -48,7 +48,7 @@ export default function App() {
   const navigate = (next, opts = null) => {
     setPreset(opts);
     if (next === "home") {
-      window.history.pushState({}, "", "/");
+      window.history.pushState({}, "", import.meta.env.BASE_URL);
     } else {
       window.history.pushState({ view: next }, "", `#${next}`);
     }

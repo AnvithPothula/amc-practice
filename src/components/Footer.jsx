@@ -17,7 +17,7 @@ export default function Footer() {
         | <a href="https://amctrivial.com/">amctrivial.com</a>
       </p>
       <p className="footer-line siteinfo noprint">
-        <DarkToggle /> | <a href="/about">About</a>
+        <DarkToggle /> | <a href={`${import.meta.env.BASE_URL}about/`}>About</a>
         <span className="bullet"> ⋅ </span>
         <span className="mobile-break">
           <br />

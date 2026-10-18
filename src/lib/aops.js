@@ -1,7 +1,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
-import { DEFAULT_TESTS } from "./constants.js";
+import { AOPS_API, DEFAULT_TESTS } from "./constants.js";
 import { latexer } from "./latex.js";
 import { rewriteWikiLinks } from "./links.js";
 import { getProblem, getSolutions } from "./parse.js";
@@ -110,13 +110,15 @@ const WIKI_IMAGES = /(?:https?:)?\/\/artofproblemsolving\.com\/wiki\/images\//g;
 
 // Every AoPS API call goes through here. AoPS blocks cross-origin calls, so
 // dev talks to the live wiki through the Chrome-backed proxy (aops-chrome.js)
-// and production builds read the static snapshot from scripts/snapshot.js.
+// and production builds read the static snapshot from scripts/snapshot.js,
+// falling back to the live API for anything the snapshot doesn't have.
 // Wiki-hosted images get the same treatment. Resolves to null instead of
-// rejecting so an unreachable page shows "not found", not a crash.
+// rejecting, so an unreachable wiki shows an error instead of hanging.
 export function aopsApi(params) {
+  const live = () => fetch(`${AOPS_API}?${params}`).then((r) => r.json());
   const req = import.meta.env.DEV
     ? fetch(`/aops-api?${params}`).then((r) => r.json())
-    : snapshotApi(new URLSearchParams(params));
+    : snapshotApi(new URLSearchParams(params)).then((json) => json ?? live());
   return req
     .then((json) => {
       const text = json?.parse?.text;
@@ -129,30 +131,36 @@ export function aopsApi(params) {
 const readSnapshot = (file) =>
   fetch(`${BASE}data/${file}`).then((r) => (r.ok ? r.json() : null));
 let categoriesPromise = null;
+let redirectsPromise = null;
 
-// Answers the few api.php queries the app makes from snapshot files.
+// Answers the few api.php queries the app makes from snapshot files, or
+// null when the snapshot doesn't have the answer.
 async function snapshotApi(p) {
   if (p.get("action") === "parse") {
     let page = await readSnapshot(`wiki/${wikiPath(p.get("page"))}`);
     if (page?.redirect) {
       page = await readSnapshot(`wiki/${wikiPath(page.redirect)}`);
     }
-    if (!page) return { error: "missing" };
+    if (!page) return null;
     return { parse: { title: page.title, text: { "*": page.text } } };
   }
   if (p.get("list") === "categorymembers") {
     categoriesPromise ??= readSnapshot("categories.json");
     const category = p.get("cmtitle").replace(/^Category:/, "");
-    const titles = (await categoriesPromise)?.[category] ?? [];
+    const titles = (await categoriesPromise)?.[category];
+    if (!titles) return null;
     return { query: { categorymembers: titles.map((title) => ({ title })) } };
   }
   if (p.get("list") === "search") {
     // No full-text index offline: match every search word against titles.
+    // Redirects get the "#REDIRECT" snippet the live API returns, which
+    // Search already filters out.
     const words = normalizeTitle(p.get("srsearch")).toLowerCase().split(" ");
-    const hits = (await fetchAllPages()).filter((t) =>
-      words.every((w) => t.toLowerCase().includes(w)),
-    );
-    return { query: { search: hits.map((title) => ({ title, snippet: "" })) } };
+    redirectsPromise ??= readSnapshot("redirects.json").then((r) => new Set(r ?? []));
+    const [pages, redirects] = await Promise.all([fetchAllPages(), redirectsPromise]);
+    const hits = pages.filter((t) => words.every((w) => t.toLowerCase().includes(w)));
+    const snippet = (title) => (redirects.has(title) ? "#REDIRECT" : "");
+    return { query: { search: hits.map((title) => ({ title, snippet: snippet(title) })) } };
   }
   return null;
 }

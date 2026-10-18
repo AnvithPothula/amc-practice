@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "snapshot": "node scripts/snapshot.js"
+    "snapshot": "node downloadlists.js && node scripts/snapshot.js"
   },
   "dependencies": {
     "@yaireo/tagify": "^4.37.1",

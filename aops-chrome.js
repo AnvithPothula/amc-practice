@@ -92,12 +92,13 @@ async function fetchInTab(tab, path, binary) {
 }
 
 // While Cloudflare is challenging (cf-mitigated header: the "Verify you are
-// human" check, or a 429 rate limit), retry quietly. Never focus the window:
-// if the check needs a click, it's visible in the AoPS tab.
-async function aopsFetch(path, binary) {
+// human" check, or a 429 rate limit) or the reply isn't what `ok` expects,
+// retry quietly. Never focus the window: if the check needs a click, it's
+// visible in the AoPS tab.
+async function aopsFetch(path, binary, ok = () => true) {
   for (let attempt = 0; attempt < 60; attempt++) {
     const res = await fetchInTab(await aopsTab(), path, binary);
-    if (res && !res.mitigated) return res;
+    if (res && !res.mitigated && ok(res)) return res;
     await sleep(res?.status === 429 ? 10000 : 2000);
   }
   throw new Error(
@@ -107,8 +108,9 @@ async function aopsFetch(path, binary) {
 
 // api.php query string -> JSON text.
 export async function aopsApiText(query) {
-  const res = await aopsFetch(`/wiki/api.php?${query}`, false);
-  if (!res.type?.includes("json")) throw new Error(`AoPS returned ${res.status}`);
+  const res = await aopsFetch(`/wiki/api.php?${query}`, false, (r) =>
+    r.type?.includes("json"),
+  );
   return res.body;
 }
 

@@ -8,7 +8,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { aopsApiText, aopsImage } from "../aops-chrome.js";
-import { SUBJECTS } from "../src/lib/constants.js";
 import { normalizeTitle, wikiPath } from "../src/lib/wikiKey.js";
 
 const DATA = path.resolve(import.meta.dirname, "../public/data");
@@ -41,26 +40,23 @@ async function pool(label, items, fn, concurrency = 1) {
   );
 }
 
+// Search's "random theorem" needs the Theorems category; subject filters
+// use the bundled categories (lib/aopsarchive.js) instead.
 const categoriesFile = path.join(DATA, "categories.json");
-const categories = {};
-if (!fs.existsSync(categoriesFile)) console.log("Categories...");
-for (const cat of fs.existsSync(categoriesFile)
-  ? []
-  : [...SUBJECTS.map((s) => s.value), "Theorems"]) {
-  categories[cat] = [];
+if (!fs.existsSync(categoriesFile)) {
+  const theorems = [];
   let cont = "";
   do {
     const json = await api(
-      `action=query&list=categorymembers&cmtitle=Category:${encodeURIComponent(cat)}` +
-        `&cmlimit=max&format=json${cont}`,
+      `action=query&list=categorymembers&cmtitle=Category:Theorems&cmlimit=max&format=json${cont}`,
     );
-    categories[cat].push(...json.query.categorymembers.map((m) => m.title));
+    theorems.push(...json.query.categorymembers.map((m) => m.title));
     cont = json.continue
       ? `&cmcontinue=${encodeURIComponent(json.continue.cmcontinue)}`
       : "";
   } while (cont);
+  write(categoriesFile, JSON.stringify({ Theorems: theorems }));
 }
-if (Object.keys(categories).length) write(categoriesFile, JSON.stringify(categories));
 
 const titles = JSON.parse(fs.readFileSync(path.join(DATA, "allpages.json")));
 // Problems and answer keys first, so a partial run is already useful.

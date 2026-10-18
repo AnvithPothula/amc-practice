@@ -65,14 +65,10 @@ export async function fetchAllPages() {
   return pagesCache;
 }
 
-// Cached lookup of AoPS Category:<subject> page lists, keyed by subject.
-// Paginates through `cmcontinue` until the wiki stops returning more.
-const categoryCache = new Map();
-
 // Returns the set of problem titles matching the given options. When
 // `subjects` is empty or contains "(All Subjects)", the universe is the
-// preloaded allproblems.json. Otherwise it's the union of AoPS
-// Category:<subject> pages, fetched per subject (cached).
+// preloaded problem list (see fetchAllProblems). Otherwise it's the union
+// of each subject's bundled AoPS and tournament category pages.
 export async function collectMatchingProblems({
   subjects,
   tests,
@@ -159,24 +155,6 @@ async function snapshotApi(p) {
     return { query: { search: hits.map((title) => ({ title, snippet: "" })) } };
   }
   return null;
-}
-
-export async function fetchCategoryPages(subject) {
-  if (categoryCache.has(subject)) return categoryCache.get(subject);
-  const titles = [];
-  let cmcontinue = null;
-  while (true) {
-    const params =
-      `action=query&list=categorymembers&cmtitle=Category:${encodeURIComponent(subject)}` +
-      `&cmlimit=max&format=json&origin=*` +
-      (cmcontinue ? `&cmcontinue=${encodeURIComponent(cmcontinue)}` : "");
-    const json = await aopsApi(params);
-    for (const m of json?.query?.categorymembers ?? []) titles.push(m.title);
-    if (!json?.continue) break;
-    cmcontinue = json.continue.cmcontinue;
-  }
-  categoryCache.set(subject, titles);
-  return titles;
 }
 
 // `redirects=1` makes MediaWiki resolve redirects server-side: the

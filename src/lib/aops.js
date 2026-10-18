@@ -7,13 +7,25 @@ import { rewriteWikiLinks } from "./links.js";
 import { getProblem, getSolutions } from "./parse.js";
 import { normalizeTitle, wikiPath } from "./wikiKey.js";
 import {
-  computeDifficulty,
-  computeNumber,
-  computeTest,
-  computeYear,
+  fetchArchiveAnswer,
+  fetchArchiveCategoryPages,
+  fetchArchiveProblem,
+  fetchArchiveProblems,
+  isArchiveContest,
+  isArchiveProblem,
+} from "./aopsarchive.js";
+import {
   matchesOptions,
+  problemDifficulty,
   validProblem,
 } from "./problems.js";
+import {
+  fetchTournamentAnswer,
+  fetchTournamentCategoryPages,
+  fetchTournamentProblem,
+  fetchTournamentProblems,
+  isTournamentProblem,
+} from "./tournaments.js";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -23,7 +35,19 @@ let problemsPromise = null;
 export async function fetchAllProblems() {
   if (problemsCache) return problemsCache;
   if (!problemsPromise) {
-    problemsPromise = fetch(`${BASE}data/allproblems.json`).then((r) => r.json());
+    // The bundled tournament problems (lib/tournaments.js) join the
+    // wiki list so the Random tabs can draw from both. The AMC, AIME,
+    // USAMO and IMO pages come from the bundled copy (lib/aopsarchive.js)
+    // instead of the wiki list.
+    problemsPromise = Promise.all([
+      fetch(`${BASE}data/allproblems.json`).then((r) => r.json()),
+      fetchArchiveProblems(),
+      fetchTournamentProblems(),
+    ]).then(([wiki, archive, tournaments]) => [
+      ...wiki.filter((t) => !isArchiveContest(t)),
+      ...archive,
+      ...tournaments,
+    ]);
   }
   problemsCache = await problemsPromise;
   return problemsCache;
@@ -74,7 +98,10 @@ export async function collectMatchingProblems({
   }
   const out = new Set();
   for (const subject of subjects) {
-    const titles = await fetchCategoryPages(subject);
+    const titles = [
+      ...(await fetchArchiveCategoryPages(subject)),
+      ...(await fetchTournamentCategoryPages(subject)),
+    ];
     for (const t of titles) {
       if (validProblem(t) && matchesOptions(t, ...args)) out.add(t);
     }
@@ -165,6 +192,8 @@ async function fetchParsed(page) {
 // underlying API call follows redirects server-side, so the returned
 // `finalPage` already reflects the resolved title.
 export async function fetchProblemPage(pagename) {
+  if (await isTournamentProblem(pagename)) return fetchTournamentProblem(pagename);
+  if (await isArchiveProblem(pagename)) return fetchArchiveProblem(pagename);
   const json = await fetchParsed(pagename);
   if (!json?.parse) return null;
 
@@ -187,8 +216,8 @@ export async function fetchProblemBatch(titles, { onProgress } = {}) {
     titles.map(async (title, i) => {
       const fetched = await fetchProblemPage(title);
       if (fetched && fetched.problem && fetched.solutions) {
-        // Sets.jsx passes underscored titles, but computeTest's regex
-        // needs the space-form ("2024 AMC 10A Problems/Problem 1").
+        // Sets.jsx passes underscored titles, but problemDifficulty's
+        // regexes need the space-form ("2024 AMC 10A Problems/Problem 1").
         // The wiki returns the resolved title with spaces; fall back
         // to normalizing the input ourselves if that's missing.
         const canonical =
@@ -197,11 +226,7 @@ export async function fetchProblemBatch(titles, { onProgress } = {}) {
           title: canonical,
           problem: fetched.problem,
           solutions: fetched.solutions,
-          difficulty: computeDifficulty(
-            computeTest(canonical),
-            computeNumber(canonical),
-            computeYear(canonical),
-          ),
+          difficulty: problemDifficulty(canonical),
         };
       }
       done += 1;
@@ -250,6 +275,8 @@ export async function fetchArticlePage(pagename) {
 }
 
 export async function fetchAnswer(pagename) {
+  if (await isTournamentProblem(pagename)) return fetchTournamentAnswer(pagename);
+  if (await isArchiveProblem(pagename)) return fetchArchiveAnswer(pagename);
   const answersTitle = `${pagename.split(" Problems/Problem")[0]} Answer Key`;
   const json = await fetchParsed(answersTitle);
   const answerText = json.parse?.text["*"];

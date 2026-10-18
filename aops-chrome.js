@@ -47,7 +47,8 @@ async function aopsTab() {
   );
 }
 
-// Runs fetch(path) inside the AoPS tab. Resolves to { status, type, body }
+// Runs fetch(path) inside the AoPS tab. Resolves to
+// { status, type, mitigated, body }
 // (body is base64 when `binary`), or null if the page wasn't ready (e.g.
 // mid-navigation right after the check is passed).
 // ponytail: one WebSocket per call; pool it if request volume ever matters.
@@ -75,6 +76,7 @@ async function fetchInTab(tab, path, binary) {
           expression: `fetch(${JSON.stringify(path)}).then(async (r) => ({
             status: r.status,
             type: r.headers.get("content-type"),
+            mitigated: r.headers.get("cf-mitigated"),
             body: ${binary ? `btoa(${read})` : read},
           }))`,
           awaitPromise: true,
@@ -89,41 +91,28 @@ async function fetchInTab(tab, path, binary) {
   }
 }
 
-// While the Cloudflare check is up, AoPS answers with an HTML challenge page
-// (cf-mitigated): 403 means a human has to click it, so bring the Chrome
-// window forward (at most every 5 minutes); 429 is rate limiting, so just
-// back off quietly.
-let lastFocus = 0;
-async function aopsFetch(path, binary, isReal) {
+// While Cloudflare is challenging (cf-mitigated header: the "Verify you are
+// human" check, or a 429 rate limit), retry quietly. Never focus the window:
+// if the check needs a click, it's visible in the AoPS tab.
+async function aopsFetch(path, binary) {
   for (let attempt = 0; attempt < 60; attempt++) {
-    const tab = await aopsTab();
-    const res = await fetchInTab(tab, path, binary);
-    if (res && isReal(res)) return res;
-    if (res?.status === 403 && Date.now() - lastFocus > 300000) {
-      lastFocus = Date.now();
-      fetch(`${CDP}/json/activate/${tab.id}`).catch(() => {});
-    }
+    const res = await fetchInTab(await aopsTab(), path, binary);
+    if (res && !res.mitigated) return res;
     await sleep(res?.status === 429 ? 10000 : 2000);
   }
   throw new Error(
-    "AoPS security check not passed: click 'Verify you are human' in the Chrome window.",
+    "AoPS security check not passed: click 'Verify you are human' in the AoPS Chrome tab.",
   );
 }
 
 // api.php query string -> JSON text.
 export async function aopsApiText(query) {
-  const res = await aopsFetch(`/wiki/api.php?${query}`, false, (r) =>
-    r.type?.includes("json"),
-  );
+  const res = await aopsFetch(`/wiki/api.php?${query}`, false);
+  if (!res.type?.includes("json")) throw new Error(`AoPS returned ${res.status}`);
   return res.body;
 }
 
-// Path under /wiki/images/ -> { status, type, body (base64) }. A 404 is a
-// real answer; the challenge page (403/429 HTML) is retried.
+// Path under /wiki/images/ -> { status, type, body (base64) }.
 export function aopsImage(path) {
-  return aopsFetch(
-    `/wiki/images/${path}`,
-    true,
-    (r) => ![403, 429].includes(r.status) || !r.type?.includes("html"),
-  );
+  return aopsFetch(`/wiki/images/${path}`, true);
 }

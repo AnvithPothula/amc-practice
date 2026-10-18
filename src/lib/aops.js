@@ -105,31 +105,37 @@ export async function collectMatchingProblems({
   return [...out];
 }
 
-const IMAGE_BASE = import.meta.env.DEV ? "/aops-images/" : `${BASE}data/images/`;
+// Wiki-hosted images are blocked cross-origin too: dev proxies them, and
+// snapshot pages use the snapshot's copies.
 const WIKI_IMAGES = /(?:https?:)?\/\/artofproblemsolving\.com\/wiki\/images\//g;
+const withImages = (json, base) => {
+  const text = json?.parse?.text;
+  if (text) text["*"] = text["*"].replace(WIKI_IMAGES, base);
+  return json;
+};
 
 // Every AoPS API call goes through here. AoPS blocks cross-origin calls, so
 // dev talks to the live wiki through the Chrome-backed proxy (aops-chrome.js)
 // and production builds read the static snapshot from scripts/snapshot.js,
 // falling back to the live API for anything the snapshot doesn't have.
-// Wiki-hosted images get the same treatment. Resolves to null instead of
-// rejecting, so an unreachable wiki shows an error instead of hanging.
+// Resolves to null instead of rejecting, so an unreachable wiki shows an
+// error instead of hanging.
 export function aopsApi(params) {
   const live = () => fetch(`${AOPS_API}?${params}`).then((r) => r.json());
   const req = import.meta.env.DEV
-    ? fetch(`/aops-api?${params}`).then((r) => r.json())
+    ? fetch(`/aops-api?${params}`)
+        .then((r) => r.json())
+        .then((json) => withImages(json, "/aops-images/"))
     : snapshotApi(new URLSearchParams(params)).then((json) => json ?? live());
-  return req
-    .then((json) => {
-      const text = json?.parse?.text;
-      if (text) text["*"] = text["*"].replace(WIKI_IMAGES, IMAGE_BASE);
-      return json;
-    })
-    .catch(() => null);
+  return req.catch(() => null);
 }
 
+// Missing or unreadable (e.g. a host's index.html fallback) means "not in
+// the snapshot".
 const readSnapshot = (file) =>
-  fetch(`${BASE}data/${file}`).then((r) => (r.ok ? r.json() : null));
+  fetch(`${BASE}data/${file}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
 let categoriesPromise = null;
 let redirectsPromise = null;
 
@@ -142,7 +148,8 @@ async function snapshotApi(p) {
       page = await readSnapshot(`wiki/${wikiPath(page.redirect)}`);
     }
     if (!page) return null;
-    return { parse: { title: page.title, text: { "*": page.text } } };
+    const json = { parse: { title: page.title, text: { "*": page.text } } };
+    return withImages(json, `${BASE}data/images/`);
   }
   if (p.get("list") === "categorymembers") {
     categoriesPromise ??= readSnapshot("categories.json");
@@ -154,10 +161,12 @@ async function snapshotApi(p) {
   if (p.get("list") === "search") {
     // No full-text index offline: match every search word against titles.
     // Redirects get the "#REDIRECT" snippet the live API returns, which
-    // Search already filters out.
+    // Search already filters out. Without a snapshot, use the live search.
+    redirectsPromise ??= readSnapshot("redirects.json").then((r) => r && new Set(r));
+    const redirects = await redirectsPromise;
+    if (!redirects) return null;
     const words = normalizeTitle(p.get("srsearch")).toLowerCase().split(" ");
-    redirectsPromise ??= readSnapshot("redirects.json").then((r) => new Set(r ?? []));
-    const [pages, redirects] = await Promise.all([fetchAllPages(), redirectsPromise]);
+    const pages = await fetchAllPages();
     const hits = pages.filter((t) => words.every((w) => t.toLowerCase().includes(w)));
     const snippet = (title) => (redirects.has(title) ? "#REDIRECT" : "");
     return { query: { search: hits.map((title) => ({ title, snippet: snippet(title) })) } };

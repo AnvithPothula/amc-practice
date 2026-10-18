@@ -10,7 +10,7 @@ The only parts of this project that will need regular manual updating are the [a
 
 AoPS now puts the wiki behind a Cloudflare check, so the browser can't call its API directly.
 
-- **Development** (`npm run dev`): AoPS requests go through [aops-chrome.js](aops-chrome.js), which opens a separate Chrome window and runs each request inside an AoPS tab. If AoPS asks you to "Verify you are human", click it there once.
+- **Development** (`npm run dev`): AoPS requests go through [aops-chrome.js](aops-chrome.js), which opens a separate Chrome window and runs each request inside an AoPS tab (set `CHROME_PATH` if Chrome isn't at the macOS default location). If AoPS asks you to "Verify you are human", click it there once.
 - **Production** builds read a static snapshot of every wiki page and image in `public/data/wiki/` and `public/data/images/`. Refresh it with `npm run snapshot` (resumable; AoPS rate-limits it to about 15 pages a minute). AMC/AIME/olympiad and tournament problems come from the bundled archives instead (see `buildaops.js`, `buildtournaments.js`).
 
 ## License

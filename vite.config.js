@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 import { aopsApiText, aopsImage } from "./aops-chrome.js";
 
 // Dev only: live AoPS data through a real Chrome window (see aops-chrome.js).
-// Production builds read the static snapshot instead (src/lib/aops.js).
+// Production builds use the static snapshot when present (src/lib/aops.js).
 const aopsProxy = {
   name: "aops-proxy",
   configureServer(server) {

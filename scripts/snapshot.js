@@ -40,9 +40,12 @@ async function pool(label, items, fn, concurrency = 1) {
   );
 }
 
-console.log("Categories...");
+const categoriesFile = path.join(DATA, "categories.json");
 const categories = {};
-for (const cat of [...SUBJECTS.map((s) => s.value), "Theorems"]) {
+if (!fs.existsSync(categoriesFile)) console.log("Categories...");
+for (const cat of fs.existsSync(categoriesFile)
+  ? []
+  : [...SUBJECTS.map((s) => s.value), "Theorems"]) {
   categories[cat] = [];
   let cont = "";
   do {
@@ -56,7 +59,7 @@ for (const cat of [...SUBJECTS.map((s) => s.value), "Theorems"]) {
       : "";
   } while (cont);
 }
-write(path.join(DATA, "categories.json"), JSON.stringify(categories));
+if (Object.keys(categories).length) write(categoriesFile, JSON.stringify(categories));
 
 const titles = JSON.parse(fs.readFileSync(path.join(DATA, "allpages.json")));
 // Problems and answer keys first, so a partial run is already useful.

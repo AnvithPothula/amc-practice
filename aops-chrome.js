@@ -90,14 +90,20 @@ async function fetchInTab(tab, path, binary) {
 }
 
 // While the Cloudflare check is up, AoPS answers with an HTML challenge page
-// (cf-mitigated). Bring the Chrome window forward and retry until it's solved.
+// (cf-mitigated): 403 means a human has to click it, so bring the Chrome
+// window forward (at most every 5 minutes); 429 is rate limiting, so just
+// back off quietly.
+let lastFocus = 0;
 async function aopsFetch(path, binary, isReal) {
   for (let attempt = 0; attempt < 60; attempt++) {
     const tab = await aopsTab();
     const res = await fetchInTab(tab, path, binary);
     if (res && isReal(res)) return res;
-    if (attempt === 0) fetch(`${CDP}/json/activate/${tab.id}`).catch(() => {});
-    await sleep(2000);
+    if (res?.status === 403 && Date.now() - lastFocus > 300000) {
+      lastFocus = Date.now();
+      fetch(`${CDP}/json/activate/${tab.id}`).catch(() => {});
+    }
+    await sleep(res?.status === 429 ? 10000 : 2000);
   }
   throw new Error(
     "AoPS security check not passed: click 'Verify you are human' in the Chrome window.",

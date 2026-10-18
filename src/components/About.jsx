@@ -44,19 +44,17 @@ export default function About() {
         </p>
         <h3>Acknowledgements</h3>
         <p>
-          This site is designed and maintained by{" "}
-          <a href="https://github.com/vqbc">Andi Chang</a> with help from the
-          Trivial team of volunteers on{" "}
-          <a href="https://github.com/vqbc/trivial">Github</a> and{" "}
-          <a href="https://discord.gg/VExpSZfkAE">Discord</a>, and built using{" "}
+          This site is maintained by{" "}
+          <a href="https://github.com/AnvithPothula">Anvith Pothula</a> on{" "}
+          <a href="https://github.com/AnvithPothula/amc-practice">Github</a>, as
+          a fork of <a href="https://github.com/vqbc/trivial">Trivial</a> by
+          Andi Chang, and built using{" "}
           <a href="https://react.dev/">React</a>,{" "}
           <a href="https://vitejs.dev/">Vite</a>,{" "}
           <a href="https://katex.org/">KaTeX</a>,{" "}
           <a href="https://github.com/react-component/slider">rc-slider</a>, &{" "}
           <a href="https://vega.github.io/vega/">Vega</a>, with icons from{" "}
-          <a href="http://www.entypo.com/">Entypo</a>. Please{" "}
-          <a href="https://forms.gle/3ofW7BQ5g5UBmknH9">contact us</a> for any
-          further inquiries.
+          <a href="http://www.entypo.com/">Entypo</a>.
         </p>
         <p>
           Article and problem text obtained from the{" "}

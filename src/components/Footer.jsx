@@ -14,7 +14,9 @@ export default function Footer() {
         >
           AoPS Wiki
         </a>{" "}
-        | <a href="https://amctrivial.com/">amctrivial.com</a>
+        | <a href="https://anvithpothula.github.io/amc-practice/">
+          anvithpothula.github.io/amc-practice
+        </a>
       </p>
       <p className="footer-line siteinfo noprint">
         <DarkToggle /> | <a href={`${import.meta.env.BASE_URL}about/`}>About</a>
@@ -22,11 +24,9 @@ export default function Footer() {
         <span className="mobile-break">
           <br />
         </span>
-        <a href="https://github.com/vqbc/trivial">Github</a> ⋅{" "}
-        <a href="https://discord.gg/VExpSZfkAE">Discord</a> ⋅{" "}
-        <a href="https://forms.gle/3ofW7BQ5g5UBmknH9">Contact</a>
+        <a href="https://github.com/AnvithPothula/amc-practice">Github</a>
         <br />
-        Made by <a href="https://vqbc.github.io">Andi Chang</a>
+        Made by <a href="https://github.com/AnvithPothula">Anvith Pothula</a>
       </p>
     </footer>
   );

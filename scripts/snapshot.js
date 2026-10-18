@@ -14,8 +14,9 @@ import { normalizeTitle, wikiPath } from "../src/lib/wikiKey.js";
 const DATA = path.resolve(import.meta.dirname, "../public/data");
 const WIKI = path.join(DATA, "wiki");
 const IMAGES = path.join(DATA, "images");
+// Saved pages are JSON, so quotes in the HTML appear as \" — stop at "\".
 const WIKI_IMAGE =
-  /(?:https?:)?\/\/artofproblemsolving\.com\/wiki\/images\/([^"'\s)?#]+)/g;
+  /(?:https?:)?\/\/artofproblemsolving\.com\/wiki\/images\/([^"'\\\s)?#]+)/g;
 
 const api = async (query) => JSON.parse(await aopsApiText(query));
 const pageFile = (title) => path.join(WIKI, wikiPath(title));

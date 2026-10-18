@@ -119,11 +119,11 @@ export async function aopsApiText(query) {
 }
 
 // Path under /wiki/images/ -> { status, type, body (base64) }. A 404 is a
-// real answer; only the challenge page (403 HTML) is retried.
+// real answer; the challenge page (403/429 HTML) is retried.
 export function aopsImage(path) {
   return aopsFetch(
     `/wiki/images/${path}`,
     true,
-    (r) => r.status !== 403 || !r.type?.includes("html"),
+    (r) => ![403, 429].includes(r.status) || !r.type?.includes("html"),
   );
 }
